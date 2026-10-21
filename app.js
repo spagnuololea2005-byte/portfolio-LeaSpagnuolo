@@ -37,6 +37,19 @@ const STATIC_MEDIA={
   '24h':["Media/24HSPA1.jpeg", "Media/24HSPA2.jpeg", "Media/24HSPA3.jpeg", "Media/24HSPA4.jpeg"]
 };
 
+// YouTube-hosted videos embedded directly into CHERRY LINE to avoid large local video files.
+const YOUTUBE_MEDIA = {
+  conception: [{ id:"JKFGwq4qybk", ratio:"16 / 9", label:"La Conception" }],
+  journalism1: [{ id:"SLS5mmtpwQY", ratio:"16 / 9", label:"Interview Benitow" }],
+  journalism2: [{ id:"lPQAl4Bwrjo", ratio:"9 / 16", label:"Interview Average Rob" }],
+  sport1: [
+    { id:"8c1Aws0_E1I", ratio:"9 / 16", label:"Sport Content 1" },
+    { id:"tUw0qhUbhiE", ratio:"16 / 9", label:"Sport Content 3" }
+  ],
+  school1: [{ id:"RlB6fXD5CFQ", ratio:"9 / 16", label:"School Content vlog" }]
+};
+
+
 
 let state=JSON.parse(localStorage.getItem("leaCherryLine")||"null")||{text:{},media:{}};
 state.text={...defaultText,...(state.text||{})}; for(const [k,v] of Object.entries(defaultText)){if(typeof state.text[k]!=="string"||!state.text[k].trim())state.text[k]=v;}
@@ -395,6 +408,24 @@ async function render(){
     const box=document.querySelector(`[data-media="${section.key}"]`);
     if(!box)continue;
     const items=getMediaMeta(section.key);
+    // These sections use hosted YouTube players instead of heavy local video files.
+    if(YOUTUBE_MEDIA[section.key] && !["sport1","school1"].includes(section.key)){
+      const yt=YOUTUBE_MEDIA[section.key][0];
+      box.innerHTML="";
+      box.classList.add("media-managed-host");
+      box.classList.remove("media-managed-multi");
+      box.style.setProperty("aspect-ratio",yt.ratio,"important");
+      const item=document.createElement("div"); item.className="media-managed-item youtube-media-item";
+      item.style.setProperty("aspect-ratio",yt.ratio,"important");
+      const frame=document.createElement("iframe");
+      frame.className="youtube-embed-frame";
+      frame.src=`https://www.youtube-nocookie.com/embed/${yt.id}?playsinline=1&rel=0`;
+      frame.title=yt.label; frame.loading="lazy";
+      frame.allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+      frame.allowFullscreen=true; frame.referrerPolicy="strict-origin-when-cross-origin";
+      item.appendChild(frame); box.appendChild(item);
+      continue;
+    }
     // ABOUT must always use its four-photo carousel, including when media is
     // supplied through the static Media/ paths rather than the browser editor.
     if(section.key==="about"){
@@ -694,7 +725,6 @@ function bindSkillsEditor(){
 async function renderContentCarousel(box, metaItems, sectionKey){
   const staticPaths=STATIC_MEDIA[sectionKey]||[];
   const entries=[];
-  // Prefer editor-managed media, preserving the order saved in the editor.
   if(metaItems.length){
     for(const meta of metaItems.slice(0,20)){
       try{
@@ -704,90 +734,76 @@ async function renderContentCarousel(box, metaItems, sectionKey){
       }catch(err){console.error("CHERRY LINE content carousel media read error",sectionKey,meta.id,err)}
     }
   }
-  // Static Media/ assets are the publishable fallback when browser-managed blobs
-  // are not present (for example on a fresh GitHub Pages visit). Missing files
-  // are filtered out instead of becoming fake carousel cards.
   if(!entries.length){
     for(const path of staticPaths.slice(0,20)){
       const isVideo=/\.(mp4|mov|webm|m4v)$/i.test(path);
+      // Sport Content 1 and 3 are hosted on YouTube, so don't load their large local copies.
+      if(sectionKey==="sport1" && (/Sportcontent1\.mov$/i.test(path) || /Sportcontent3\.mov$/i.test(path))) continue;
       const loaded=await checkStaticMedia(path,isVideo);
       if(loaded) entries.push({path,isVideo,meta:{format:"Original",customRatio:""}});
     }
   }
-
+  // The corresponding Sport Content 1 and 3 local files are replaced by their YouTube versions.
+  if(sectionKey==="sport1"){
+    for(let i=entries.length-1;i>=0;i--){
+      const name=String(entries[i].meta?.name||entries[i].meta?.filename||entries[i].meta?.src||entries[i].path||"");
+      if(/sportcontent[13]\.(mov|mp4|webm|m4v)$/i.test(name)) entries.splice(i,1);
+    }
+  }
+  // Add hosted videos to the carousel while preserving each video's native orientation.
+  for(const yt of (YOUTUBE_MEDIA[sectionKey]||[])){
+    if(!entries.some(entry=>entry.youtubeId===yt.id)) entries.push({youtubeId:yt.id,ratio:yt.ratio,label:yt.label,meta:{format:"Original",customRatio:""}});
+  }
   box.innerHTML="";
   box.classList.add("content-carousel-host","media-managed-host");
   box.classList.remove("media-managed-multi");
   box.style.removeProperty("aspect-ratio");
   box.style.removeProperty("width");
   box.style.removeProperty("height");
-  if(!entries.length){
-    box.classList.add("content-carousel-empty");
-    box.textContent="MEDIA COMING SOON";
-    return;
-  }
-  box.classList.remove("content-carousel-empty");
-  const stage=document.createElement("div"); stage.className="content-carousel-stage";
-  const prev=document.createElement("button"); prev.type="button"; prev.className="content-carousel-arrow content-carousel-prev"; prev.setAttribute("aria-label","Previous media"); prev.textContent="‹";
-  const next=document.createElement("button"); next.type="button"; next.className="content-carousel-arrow content-carousel-next"; next.setAttribute("aria-label","Next media"); next.textContent="›";
-  const counter=document.createElement("span"); counter.className="content-carousel-counter";
-  const dots=document.createElement("div"); dots.className="content-carousel-dots";
-  box.append(stage,prev,next,counter,dots);
-  let index=0;
-
-  function makeMedia(entry, isActive){
-    const frame=document.createElement("div"); frame.className="content-carousel-slide";
-    if(isActive) frame.classList.add("is-active");
-    let src=entry.src;
-    if(entry.file && !entry.file.legacy) src=URL.createObjectURL(entry.file.blob||entry.file);
-    const type=entry.isVideo || entry.file?.type==="video" || String(entry.file?.type||"").startsWith("video/");
-    if(type){
-      const video=document.createElement("video");
-      video.src=src||entry.path; video.playsInline=true; video.preload=isActive?"metadata":"none";
-      video.muted=!isActive; video.controls=!!isActive;
-      video.setAttribute("playsinline","");
-      video.addEventListener("loadedmetadata",()=>{
-        if(isActive) stage.style.setProperty("--active-ratio",`${video.videoWidth||4} / ${video.videoHeight||5}`);
-      },{once:true});
-      video.addEventListener("error",()=>{frame.classList.add("content-carousel-media-error");video.remove();frame.textContent="MEDIA UNAVAILABLE"},{once:true});
-      frame.appendChild(video);
-    } else {
-      const img=document.createElement("img"); img.alt=""; img.loading="lazy"; img.src=src||entry.path;
-      img.addEventListener("load",()=>{if(isActive)stage.style.setProperty("--active-ratio",`${img.naturalWidth||4} / ${img.naturalHeight||5}`)},{once:true});
-      img.addEventListener("error",()=>{frame.classList.add("content-carousel-media-error");img.remove();frame.textContent="MEDIA UNAVAILABLE"},{once:true});
-      frame.appendChild(img);
+  if(!entries.length){box.classList.add("content-carousel-empty");box.textContent="MEDIA COMING SOON";return;}
+  const stage=document.createElement("div");stage.className="content-carousel-stage";
+  const track=document.createElement("div");track.className="content-carousel-track";
+  const prev=document.createElement("button");prev.type="button";prev.className="content-carousel-arrow content-carousel-prev";prev.setAttribute("aria-label","Previous media");prev.textContent="‹";
+  const next=document.createElement("button");next.type="button";next.className="content-carousel-arrow content-carousel-next";next.setAttribute("aria-label","Next media");next.textContent="›";
+  const counter=document.createElement("span");counter.className="content-carousel-counter";
+  const dots=document.createElement("div");dots.className="content-carousel-dots";
+  stage.appendChild(track);box.append(stage,prev,next,counter,dots);
+  let index=0;const slides=[];
+  function makeMedia(entry,i){
+    const frame=document.createElement("div");frame.className="content-carousel-slide";frame.dataset.index=String(i);
+    let src=entry.src;if(entry.file&&!entry.file.legacy)src=URL.createObjectURL(entry.file.blob||entry.file);
+    const applyRatio=(el,w,h)=>{if(!w||!h)return;const ratio=w/h;const stageH=Math.max(220,Math.min(460,window.innerWidth<600?300:420));let height=stageH,width=height*ratio;const maxWidth=Math.max(180,Math.min(window.innerWidth*.78,900));if(width>maxWidth){width=maxWidth;height=width/ratio;}frame.style.width=`${Math.round(width)}px`;frame.style.height=`${Math.round(height)}px`;};
+    if(entry.youtubeId){
+      const ratio=entry.ratio||"16 / 9"; const parts=ratio.split("/").map(v=>Number(v.trim())); const rw=parts[0]||16,rh=parts[1]||9;
+      const stageH=Math.max(220,Math.min(460,window.innerWidth<600?300:420)); let height=stageH,width=height*rw/rh;
+      const maxWidth=Math.max(180,Math.min(window.innerWidth*.78,900)); if(width>maxWidth){width=maxWidth;height=width/(rw/rh);}
+      frame.style.width=`${Math.round(width)}px`; frame.style.height=`${Math.round(height)}px`; frame.classList.add("content-carousel-youtube");
+      const iframe=document.createElement("iframe"); iframe.className="youtube-embed-frame";
+      iframe.src=`https://www.youtube-nocookie.com/embed/${entry.youtubeId}?playsinline=1&rel=0`; iframe.title=entry.label||"YouTube video"; iframe.loading="lazy";
+      iframe.allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"; iframe.allowFullscreen=true; iframe.referrerPolicy="strict-origin-when-cross-origin";
+      frame.appendChild(iframe);
+    }
+    else {
+      const type=entry.isVideo||entry.file?.type==="video"||String(entry.file?.type||"").startsWith("video/");
+      if(type){const video=document.createElement("video");video.src=src||entry.path;video.playsInline=true;video.preload="metadata";video.muted=true;video.controls=true;video.setAttribute("playsinline","");video.addEventListener("loadedmetadata",()=>applyRatio(video,video.videoWidth,video.videoHeight),{once:true});video.addEventListener("error",()=>{frame.classList.add("content-carousel-media-error");video.remove();frame.textContent="MEDIA UNAVAILABLE"},{once:true});frame.appendChild(video);}
+      else{const img=document.createElement("img");img.alt=`${sectionKey==="sport1"?"Sport":"School"} content ${i+1}`;img.loading="lazy";img.src=src||entry.path;img.addEventListener("load",()=>applyRatio(img,img.naturalWidth,img.naturalHeight),{once:true});img.addEventListener("error",()=>{frame.classList.add("content-carousel-media-error");img.remove();frame.textContent="MEDIA UNAVAILABLE"},{once:true});frame.appendChild(img);}
     }
     return frame;
   }
-  function setActive(nextIndex){
+  entries.forEach((entry,i)=>{const slide=makeMedia(entry,i);slides.push(slide);track.appendChild(slide)});
+  function setActive(nextIndex,scroll=true){
     index=(nextIndex+entries.length)%entries.length;
-    stage.innerHTML="";
-    stage.style.setProperty("--active-ratio","4 / 5");
-    if(entries.length===1){
-      const active=makeMedia(entries[index],true); active.classList.add("is-only"); stage.appendChild(active);
-    } else if(entries.length===2){
-      const before=makeMedia(entries[(index+1)%entries.length],false); before.classList.add("is-prev"); before.setAttribute("role","button"); before.setAttribute("aria-label","Show other media"); before.addEventListener("click",()=>setActive(index+1));
-      const active=makeMedia(entries[index],true); active.classList.add("is-only-two");
-      stage.append(before,active);
-    } else {
-      const before=makeMedia(entries[(index-1+entries.length)%entries.length],false); before.classList.add("is-prev"); before.setAttribute("role","button"); before.setAttribute("aria-label","Show previous media"); before.addEventListener("click",()=>setActive(index-1));
-      const active=makeMedia(entries[index],true);
-      const after=makeMedia(entries[(index+1)%entries.length],false); after.classList.add("is-next"); after.setAttribute("role","button"); after.setAttribute("aria-label","Show next media"); after.addEventListener("click",()=>setActive(index+1));
-      stage.append(before,active,after);
-    }
-    prev.disabled=entries.length<2; next.disabled=entries.length<2;
+    slides.forEach((slide,i)=>slide.classList.toggle("is-active",i===index));
     counter.textContent=`${index+1} / ${entries.length}`;
-    dots.innerHTML="";
-    if(entries.length>1){
-      entries.forEach((_,i)=>{const dot=document.createElement("button");dot.type="button";dot.setAttribute("aria-label",`Go to media ${i+1}`);dot.classList.toggle("active",i===index);dot.addEventListener("click",()=>setActive(i));dots.appendChild(dot)});
-    }
+    dots.querySelectorAll("button").forEach((dot,i)=>dot.classList.toggle("active",i===index));
+    prev.disabled=entries.length<2;next.disabled=entries.length<2;
+    if(scroll){const slide=slides[index];stage.scrollTo({left:slide.offsetLeft-(stage.clientWidth-slide.clientWidth)/2,behavior:"smooth"});}
   }
-  prev.addEventListener("click",()=>setActive(index-1));
-  next.addEventListener("click",()=>setActive(index+1));
-  let touchX=0;
-  stage.addEventListener("touchstart",e=>{touchX=e.changedTouches[0]?.clientX||0},{passive:true});
-  stage.addEventListener("touchend",e=>{const dx=(e.changedTouches[0]?.clientX||0)-touchX;if(Math.abs(dx)>45)setActive(index+(dx<0?1:-1))},{passive:true});
-  setActive(0);
+  if(entries.length>1){entries.forEach((_,i)=>{const dot=document.createElement("button");dot.type="button";dot.setAttribute("aria-label",`Go to media ${i+1}`);dot.addEventListener("click",()=>setActive(i));dots.appendChild(dot)});}
+  prev.addEventListener("click",()=>setActive(index-1));next.addEventListener("click",()=>setActive(index+1));
+  let touchX=0;stage.addEventListener("touchstart",e=>{touchX=e.changedTouches[0]?.clientX||0},{passive:true});stage.addEventListener("touchend",e=>{const dx=(e.changedTouches[0]?.clientX||0)-touchX;if(Math.abs(dx)>45)setActive(index+(dx<0?1:-1))},{passive:true});
+  stage.addEventListener("scroll",()=>{if(!slides.length)return;const center=stage.scrollLeft+stage.clientWidth/2;let nearest=0,distance=Infinity;slides.forEach((slide,i)=>{const d=Math.abs(slide.offsetLeft+slide.clientWidth/2-center);if(d<distance){distance=d;nearest=i}});if(nearest!==index){index=nearest;slides.forEach((slide,i)=>slide.classList.toggle("is-active",i===index));counter.textContent=`${index+1} / ${entries.length}`;dots.querySelectorAll("button").forEach((dot,i)=>dot.classList.toggle("active",i===index));}},{passive:true});
+  requestAnimationFrame(()=>setActive(0,false));
 }
 
 function checkStaticMedia(path,isVideo){

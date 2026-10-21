@@ -3554,3 +3554,45 @@ main, section, article, .section-head, .work-grid, .work-item, .experience-card,
 @media(min-width:851px){.content-carousel-slide.is-only-two{width:62%;left:27%}}
 @media(max-width:850px){.content-carousel-slide.is-only-two{width:68%;left:25%}}
 @media(max-width:480px){.content-carousel-slide.is-only-two{width:72%;left:23%}}
+
+
+/* FINAL FIX — Sport and School each occupy their own full-width row. */
+#work .work-item.content-card[data-content-category="sport"],
+#work .work-item.content-card[data-content-category="school"]{
+  grid-column:1 / -1 !important; width:100% !important; max-width:none !important;
+  display:block !important; min-width:0 !important;
+}
+#work .work-item.content-card[data-content-category="sport"] > h3,
+#work .work-item.content-card[data-content-category="school"] > h3{width:100%!important}
+#work .image-placeholder.content-carousel-host[data-media="sport1"],
+#work .image-placeholder.content-carousel-host[data-media="school1"]{
+  width:100%!important; max-width:none!important; margin:22px 0 28px!important;
+}
+.content-carousel-stage{
+  width:100%!important; max-width:none!important; height:460px!important; min-height:0!important; max-height:none!important;
+  overflow-x:auto!important; overflow-y:hidden!important; scroll-snap-type:x mandatory; scrollbar-width:thin;
+  scrollbar-color:rgba(102,0,0,.45) transparent; aspect-ratio:auto!important; background:transparent!important;
+}
+.content-carousel-track{display:flex;align-items:center;gap:18px;width:max-content;min-width:100%;height:100%;padding:0 8px;box-sizing:border-box}
+.content-carousel-slide{
+  position:relative!important;inset:auto!important;flex:0 0 auto!important;width:auto;height:auto;max-width:none;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;background:transparent!important;
+  border:0!important;opacity:1!important;transform:none!important;z-index:1!important;scroll-snap-align:center;cursor:default!important;
+}
+.content-carousel-slide.is-active{z-index:2!important;outline:1px solid rgba(102,0,0,.24);outline-offset:2px}
+.content-carousel-slide img,.content-carousel-slide video{
+  display:block!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;
+  object-fit:contain!important;background:transparent!important;
+}
+.content-carousel-arrow{z-index:8!important}
+.content-carousel-prev{left:12px!important}.content-carousel-next{right:12px!important}
+.content-carousel-dots{z-index:8!important}
+@media(max-width:850px){.content-carousel-stage{height:380px!important}.content-carousel-track{gap:14px}}
+@media(max-width:480px){.content-carousel-stage{height:300px!important}.content-carousel-track{gap:10px;padding-inline:6px}}
+
+
+/* YouTube embeds for hosted portfolio videos; scoped to added players only. */
+.youtube-media-item { position: relative !important; width: 100% !important; height: auto !important; min-height: 0 !important; overflow: hidden !important; }
+.youtube-embed-frame { display: block !important; width: 100% !important; height: 100% !important; min-width: 0 !important; min-height: 0 !important; border: 0 !important; background: #000 !important; }
+.content-carousel-youtube { overflow: hidden !important; position: relative !important; }
+.content-carousel-youtube .youtube-embed-frame { position: absolute !important; inset: 0 !important; }
